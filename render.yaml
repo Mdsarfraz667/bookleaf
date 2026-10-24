@@ -1,0 +1,42 @@
+# Render Blueprint — provisions Postgres + the BookLeaf API in one deploy.
+# Deploy with: Render Dashboard → New → Blueprint → point at this repo.
+# The client is deployed separately on Vercel (see README "Deployment").
+databases:
+  - name: bookleaf-db
+    databaseName: bookleaf
+    plan: free
+
+services:
+  - type: web
+    name: bookleaf-api
+    runtime: node
+    plan: free
+    rootDir: server
+    # prisma generate must run so @prisma/client exists before tsx starts.
+    buildCommand: npm install && npm run prisma:generate
+    # Apply migrations on every deploy; seed is a one-time manual step (see README).
+    # Use the pinned local Prisma binary (never npx, which can pull a different major).
+    startCommand: ./node_modules/.bin/prisma migrate deploy && npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: bookleaf-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: SEED_PASSWORD
+        value: Bookleaf@123
+      - key: AI_MODEL
+        value: claude-haiku-4-5
+      - key: AI_ENABLED
+        value: "true"
+      # Set these two in the dashboard after the services exist:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: CLIENT_ORIGIN
+        sync: false

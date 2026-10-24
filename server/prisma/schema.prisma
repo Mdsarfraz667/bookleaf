@@ -1,0 +1,162 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum TicketCategory {
+  ROYALTY_PAYMENTS
+  ISBN_METADATA
+  PRINTING_QUALITY
+  DISTRIBUTION_AVAILABILITY
+  BOOK_STATUS_PRODUCTION
+  GENERAL_INQUIRY
+}
+
+enum TicketPriority {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum SenderType {
+  AUTHOR
+  ADMIN
+}
+
+model Author {
+  id           String    @id @default(cuid())
+  externalId   String    @unique
+  name         String
+  email        String    @unique
+  passwordHash String
+  phone        String?
+  city         String?
+  joinedDate   DateTime? @db.Date
+  books        Book[]
+  tickets      Ticket[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Admin {
+  id              String          @id @default(cuid())
+  name            String
+  email           String          @unique
+  passwordHash    String
+  assignedTickets Ticket[]        @relation("AssignedAdmin")
+  messages        TicketMessage[]
+  notes           InternalNote[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+model Book {
+  id                 String    @id @default(cuid())
+  externalId         String    @unique
+  authorId           String
+  author             Author    @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  title              String
+  isbn               String?
+  genre              String?
+  publicationDate    DateTime? @db.Date
+  status             String
+  mrp                Int?
+  royaltyPerCopy     Int?
+  totalCopiesSold    Int       @default(0)
+  totalRoyaltyEarned Int       @default(0)
+  royaltyPaid        Int       @default(0)
+  royaltyPending     Int       @default(0)
+  lastPayoutDate     DateTime? @db.Date
+  printPartner       String?
+  availableOn        String[]
+  tickets            Ticket[]
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([authorId])
+}
+
+/// Support request. bookId is null for "General / Account Level".
+model Ticket {
+  id                 String         @id @default(cuid())
+  authorId           String
+  author             Author         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  bookId             String?
+  book               Book?          @relation(fields: [bookId], references: [id], onDelete: SetNull)
+  subject            String
+  description        String
+  status             TicketStatus   @default(OPEN)
+  category           TicketCategory @default(GENERAL_INQUIRY)
+  priority           TicketPriority @default(MEDIUM)
+  categoryOverridden Boolean        @default(false)
+  priorityOverridden Boolean        @default(false)
+  aiClassified       Boolean        @default(false)
+  aiReasoning        String?
+  aiDraft            String?
+  aiDraftModel       String?
+  assignedAdminId    String?
+  assignedAdmin      Admin?         @relation("AssignedAdmin", fields: [assignedAdminId], references: [id], onDelete: SetNull)
+  messages           TicketMessage[]
+  notes              InternalNote[]
+  attachments        Attachment[]
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([authorId])
+  @@index([status])
+  @@index([priority])
+  @@index([category])
+  @@index([createdAt])
+}
+
+/// Author-visible thread. Do not store internal notes here.
+model TicketMessage {
+  id         String     @id @default(cuid())
+  ticketId   String
+  ticket     Ticket     @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  senderType SenderType
+  adminId    String?
+  admin      Admin?     @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  body       String
+  createdAt  DateTime   @default(now())
+
+  @@index([ticketId])
+}
+
+/// Admin-only notes. A separate table so they cannot be returned with the author thread.
+model InternalNote {
+  id        String   @id @default(cuid())
+  ticketId  String
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  adminId   String
+  admin     Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([ticketId])
+}
+
+/// Metadata only. File bytes are not stored.
+model Attachment {
+  id        String   @id @default(cuid())
+  ticketId  String
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  fileName  String
+  mimeType  String?
+  sizeBytes Int?
+  createdAt DateTime @default(now())
+
+  @@index([ticketId])
+}
